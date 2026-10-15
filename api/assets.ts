@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createSupabaseAdmin, simulateAssetUpdates, applyCors } from '../_lib/shared';
+import { sb, simulateAssetUpdates, applyCors } from '../_lib/shared';
 
 let cachedAssets: any[] | null = null;
 let lastUpdate = 0;
@@ -10,19 +10,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const client = createSupabaseAdmin();
-    const { data: assets, error } = await client.from('assets').select('*').order('symbol');
-    if (error) throw error;
-
+    const assets = await sb<any[]>(`assets?select=*&order=symbol`);
     const now = Date.now();
     if (!cachedAssets || now - lastUpdate > 2000) {
       cachedAssets = simulateAssetUpdates(assets || []);
       lastUpdate = now;
       for (const asset of cachedAssets) {
-        client.from('assets').update({
-          price: asset.price, change_24h: asset.change_24h,
-          sparkline: asset.sparkline, updated_at: new Date().toISOString()
-        }).eq('id', asset.id);
+        // Fire and forget
+        sb(`assets?id=eq.${asset.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            price: asset.price, change_24h: asset.change_24h,
+            sparkline: asset.sparkline, updated_at: new Date().toISOString()
+          })
+        }).catch(() => {});
       }
     }
     return res.json(cachedAssets || assets || []);

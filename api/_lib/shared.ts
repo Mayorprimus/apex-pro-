@@ -1,6 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ---------- CORS ----------
+// ==================== CONSTANTS ====================
+const SUPABASE_URL = 'https://smnvuvyybhliwrtgqdgx.supabase.co';
+const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAxMTIxOCwiZXhwIjoyMTA3NTg3MjE4fQ.uycLaxtbgvhX5LBiz94C7kDjrRPAJSH-sYXvUdDYu5E';
+
+const SUPABASE_HEADERS = {
+  'apikey': SUPABASE_SERVICE_KEY,
+  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=representation'
+};
+
+// ==================== CORS ====================
 export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,53 +21,84 @@ export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
   return false;
 }
 
-// ---------- Lazy Supabase (created per-request) ----------
-function createSupabaseAdmin() {
-  const { createClient } = require('@supabase/supabase-js');
-  return createClient(
-    'https://smnvuvyybhliwrtgqdgx.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAxMTIxOCwiZXhwIjoyMTA3NTg3MjE4fQ.uycLaxtbgvhX5LBiz94C7kDjrRPAJSH-sYXvUdDYu5E',
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
-
-// ---------- Lazy bcrypt ----------
-function getBcrypt() {
-  return require('bcryptjs');
-}
-
-// ---------- Session helpers ----------
-async function getUserFromSession(sessionId: string) {
-  if (!sessionId) return null;
-  const client = createSupabaseAdmin();
-  const { data: session } = await client.from('sessions').select('user_id, expires_at').eq('id', sessionId).single();
-  if (!session || new Date(session.expires_at) < new Date()) {
-    if (session) await client.from('sessions').delete().eq('id', sessionId);
-    return null;
+// ==================== SUPABASE REST API HELPERS ====================
+async function sb<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: { ...SUPABASE_HEADERS, ...(options.headers || {}) }
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase ${res.status}: ${text}`);
   }
-  const { data: user } = await client.from('users').select('*').eq('id', session.user_id).single();
-  return user;
+  return res.json();
 }
 
-async function createSession(userId: string): Promise<string> {
-  const client = createSupabaseAdmin();
-  const sessionId = crypto.randomUUID();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  await client.from('sessions').insert({ id: sessionId, user_id: userId, expires_at: expiresAt.toISOString() });
-  return sessionId;
+async function sbSingle<T>(path: string, options: RequestInit = {}): Promise<T | null> {
+  const arr = await sb<T[]>(`${path}&limit=1`, options);
+  return arr[0] ?? null;
+}
+
+// ==================== PASSWORD HASHING (Web Crypto) ====================
+// Simple PBKDF2-based hash using Web Crypto API (no external deps)
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+  );
+  const hash = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
+  const hashBytes = new Uint8Array(hash);
+  // Format: pbkdf2_sha256$100000$salt$hash (base64)
+  return `pbkdf2_sha256$100000$${btoa(String.fromCharCode(...salt))}$${btoa(String.fromCharCode(...hashBytes))}`;
 }
 
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const bcrypt = getBcrypt();
-  try { return await bcrypt.compare(password, hash); } catch { return password === hash; }
+  try {
+    // Expected format: pbkdf2_sha256$iterations$salt$hash
+    const [algo, iterationsStr, saltB64, hashB64] = hash.split('$');
+    if (algo !== 'pbkdf2_sha256') return password === hash; // fallback for old hashes
+
+    const iterations = parseInt(iterationsStr, 10);
+    const salt = new Uint8Array(atob(saltB64).split('').map(c => c.charCodeAt(0)));
+    const expectedHash = new Uint8Array(atob(hashB64).split('').map(c => c.charCodeAt(0)));
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+    );
+    const derived = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
+    const derivedBytes = new Uint8Array(derived);
+
+    // Constant-time comparison
+    if (derivedBytes.length !== expectedHash.length) return false;
+    let diff = 0;
+    for (let i = 0; i < derivedBytes.length; i++) diff |= derivedBytes[i] ^ expectedHash[i];
+    return diff === 0;
+  } catch {
+    return false;
+  }
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const bcrypt = getBcrypt();
-  return await bcrypt.hash(password, 10);
+// ==================== SESSION HELPERS ====================
+async function getUserFromSession(sessionId: string) {
+  if (!sessionId) return null;
+  const session = await sbSingle<any>(`sessions?select=user_id,expires_at&id=eq.${sessionId}`);
+  if (!session || new Date(session.expires_at) < new Date()) {
+    if (session) await sb(`sessions?id=eq.${sessionId}`, { method: 'DELETE' });
+    return null;
+  }
+  return sbSingle<any>(`users?select=*&id=eq.${session.user_id}`);
 }
 
-// ---------- Middleware ----------
+async function createSession(userId: string): Promise<string> {
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await sb('sessions', { method: 'POST', body: JSON.stringify({ id: sessionId, user_id: userId, expires_at: expiresAt }) });
+  return sessionId;
+}
+
+// ==================== MIDDLEWARE ====================
 export async function authMiddleware(req: VercelRequest, res: VercelResponse) {
   const sessionId = req.headers['x-session-id'] as string;
   const user = await getUserFromSession(sessionId);
@@ -71,7 +113,16 @@ export async function adminMiddleware(req: VercelRequest, res: VercelResponse) {
   return user;
 }
 
-// ---------- Asset simulation ----------
+export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-Session-ID');
+  if (req.method === 'OPTIONS') { res.status(200).end(); return true; }
+  return false;
+}
+
+// ==================== ASSET SIMULATION ====================
 export function simulateAssetUpdates(assets: any[]) {
   return assets.map(asset => {
     const isVolatile = asset.symbol.includes('GOLD') || asset.symbol.includes('BTC');
@@ -98,5 +149,22 @@ export function simulateAssetUpdates(assets: any[]) {
   });
 }
 
-// Export the factory functions so handlers can use them
-export { createSupabaseAdmin, getBcrypt, hashPassword, verifyPassword, createSession, getUserFromSession };
+// ==================== EXPORTED HELPERS ====================
+export async function getUserFromSession(sessionId: string) {
+  if (!sessionId) return null;
+  const session = await sbSingle<any>(`sessions?select=user_id,expires_at&id=eq.${sessionId}`);
+  if (!session || new Date(session.expires_at) < new Date()) {
+    if (session) await sb(`sessions?id=eq.${sessionId}`, { method: 'DELETE' });
+    return null;
+  }
+  return sbSingle<any>(`users?select=*&id=eq.${session.user_id}`);
+}
+
+export async function createSession(userId: string): Promise<string> {
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await sb('sessions', { method: 'POST', body: JSON.stringify({ id: sessionId, user_id: userId, expires_at: expiresAt }) });
+  return sessionId;
+}
+
+export { hashPassword, verifyPassword, createSession, getUserFromSession, sb, sbSingle };

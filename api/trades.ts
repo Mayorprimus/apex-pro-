@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createSupabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
+import { sb, sbSingle, authMiddleware, applyCors } from '../_lib/shared';
 
 // POST /api/trades?action=place&asset={assetId}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -16,8 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!assetId || !type || !lot) return res.status(400).json({ error: 'Missing required fields' });
       if (lot <= 0 || lot > user.balance) return res.status(400).json({ error: 'Invalid position size' });
 
-      const client = createSupabaseAdmin();
-      const { data: asset } = await client.from('assets').select('*').eq('id', assetId).single();
+      const asset = await sbSingle<any>(`assets?select=*&id=eq.${assetId}`);
       if (!asset) return res.status(404).json({ error: 'Asset not found' });
 
       const payoutRate = 0.88;
@@ -25,16 +24,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const isWin = Math.random() > 0.48;
       const finalProfit = isWin ? profit : -lot;
 
-      const { data: trade, error } = await client.from('trades').insert({
+      const tradeData = {
         user_id: user.id, symbol: asset.symbol, type, lot,
         open_price: asset.price, close_price: asset.price * (isWin ? 1.0001 : 0.9999),
         profit: finalProfit, status: 'CLOSED',
         opened_at: new Date().toISOString(), closed_at: new Date().toISOString()
-      }).select().single();
-      if (error) throw error;
+      };
+
+      const trade = await sbSingle<any>('trades', { method: 'POST', body: JSON.stringify(tradeData) });
+      if (!trade) throw new Error('Failed to create trade');
 
       const newBalance = Math.max(0, (user.balance || 0) + finalProfit);
-      await client.from('users').update({ balance: newBalance }).eq('id', user.id);
+      await sb(`users?id=eq.${user.id}`, { method: 'PATCH', body: JSON.stringify({ balance: newBalance }) });
 
       return res.json({ trade, newBalance, isWin, profit: finalProfit });
     }

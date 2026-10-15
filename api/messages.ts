@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createSupabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
+import { sb, sbSingle, authMiddleware, applyCors } from '../_lib/shared';
 
 // GET  /api/messages
 // POST /api/messages
@@ -12,11 +12,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === 'GET') {
-      const client = createSupabaseAdmin();
-      let query = client.from('messages').select('*').order('created_at', { ascending: true });
-      if (!isAdmin) query = query.eq('user_id', user.id);
-      const { data: messages, error } = await query;
-      if (error) throw error;
+      let query = `messages?select=*&order=created_at.asc`;
+      if (!isAdmin) query += `&user_id=eq.${user.id}`;
+      const messages = await sb<any[]>(query);
       return res.json(messages || []);
     }
 
@@ -25,11 +23,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!text) return res.status(400).json({ error: 'Message text required' });
       const messageSender = isAdmin && sender === 'admin' ? 'admin' : 'user';
 
-      const client = createSupabaseAdmin();
-      const { data: message, error } = await client.from('messages').insert({
-        user_id: user.id, user_name: user.name, sender: messageSender, text
-      }).select().single();
-      if (error) throw error;
+      const msgData = { user_id: user.id, user_name: user.name, sender: messageSender, text };
+      const message = await sbSingle<any>('messages', { method: 'POST', body: JSON.stringify(msgData) });
+      if (!message) throw new Error('Failed to insert message');
       return res.json(message);
     }
 
