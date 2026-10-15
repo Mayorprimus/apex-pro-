@@ -39,41 +39,31 @@ async function sbSingle<T>(path: string, options: RequestInit = {}): Promise<T |
   return arr[0] ?? null;
 }
 
-// ==================== PASSWORD HASHING (Web Crypto) ====================
-// Simple PBKDF2-based hash using Web Crypto API (no external deps)
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
-  );
-  const hash = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
-  const hashBytes = new Uint8Array(hash);
+// ==================== PASSWORD HASHING (Node crypto - reliable) ====================
+const crypto = require('crypto');
+
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
   // Format: pbkdf2_sha256$100000$salt$hash (base64)
-  return `pbkdf2_sha256$100000$${btoa(String.fromCharCode(...salt))}$${btoa(String.fromCharCode(...hashBytes))}`;
+  return `pbkdf2_sha256$100000$${salt.toString('base64')}$${hash.toString('base64')}`;
 }
 
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
+function verifyPassword(password: string, hash: string): boolean {
   try {
-    // Expected format: pbkdf2_sha256$iterations$salt$hash
     const [algo, iterationsStr, saltB64, hashB64] = hash.split('$');
-    if (algo !== 'pbkdf2_sha256') return password === hash; // fallback for old hashes
+    if (algo !== 'pbkdf2_sha256') return password === hash; // fallback
 
     const iterations = parseInt(iterationsStr, 10);
-    const salt = new Uint8Array(atob(saltB64).split('').map(c => c.charCodeAt(0)));
-    const expectedHash = new Uint8Array(atob(hashB64).split('').map(c => c.charCodeAt(0)));
+    const salt = Buffer.from(saltB64, 'base64');
+    const expectedHash = Buffer.from(hashB64, 'base64');
 
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
-    );
-    const derived = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
-    const derivedBytes = new Uint8Array(derived);
-
+    const derived = crypto.pbkdf2Sync(password, Buffer.from(saltB64, 'base64'), 100000, 32, 'sha256');
+    
     // Constant-time comparison
-    if (derivedBytes.length !== expectedHash.length) return false;
+    if (derived.length !== expectedHash.length) return false;
     let diff = 0;
-    for (let i = 0; i < derivedBytes.length; i++) diff |= derivedBytes[i] ^ expectedHash[i];
+    for (let i = 0; i < derived.length; i++) diff |= derived[i] ^ expectedHash[i];
     return diff === 0;
   } catch {
     return false;
@@ -92,7 +82,7 @@ async function getUserFromSession(sessionId: string) {
 }
 
 async function createSession(userId: string): Promise<string> {
-  const sessionId = crypto.randomUUID();
+  const sessionId = require('crypto').randomUUID();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   await sb('sessions', { method: 'POST', body: JSON.stringify({ id: sessionId, user_id: userId, expires_at: expiresAt }) });
   return sessionId;
@@ -161,10 +151,28 @@ export async function getUserFromSession(sessionId: string) {
 }
 
 export async function createSession(userId: string): Promise<string> {
-  const sessionId = crypto.randomUUID();
+  const sessionId = require('crypto').randomUUID();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   await sb('sessions', { method: 'POST', body: JSON.stringify({ id: sessionId, user_id: userId, expires_at: expiresAt }) });
   return sessionId;
+}
+
+// ==================== SUPABASE REST API HELPERS ====================
+async function sb<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: { ...SUPABASE_HEADERS, ...(options.headers || {}) }
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+async function sbSingle<T>(path: string, options: RequestInit = {}): Promise<T | null> {
+  const arr = await sb<T[]>(`${path}&limit=1`, options);
+  return arr[0] ?? null;
 }
 
 export { hashPassword, verifyPassword, createSession, getUserFromSession, sb, sbSingle };
