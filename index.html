@@ -29,7 +29,7 @@
   <body>
     <div id="root">
       <!-- Fallback if React fails to mount -->
-      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#020203;color:#fff;font-family:system-ui;padding:20px;text-align:center;">
+      <div id="fallback" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#020203;color:#fff;font-family:system-ui;padding:20px;text-align:center;">
         <div>
           <div style="font-size:3rem;margin-bottom:1rem;">⚡</div>
           <h1 style="font-size:1.5rem;margin-bottom:0.5rem;">Apex Terminal</h1>
@@ -40,15 +40,21 @@
     </div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Force refresh if stuck on fallback for >10s
-      setTimeout(() => {
+      console.log('Apex Terminal loading...');
+      // Clear any stale caches
+      if ('caches' in window) {
+        caches.keys().then(names => names.forEach(name => caches.delete(name)));
+      }
+      // Hide fallback when React mounts (React clears root content on mount)
+      const observer = new MutationObserver(() => {
         const root = document.getElementById('root');
-        if (root && root.querySelector('h1')) {
-          console.log('React failed to mount, reloading...');
-          location.reload();
+        const fallback = document.getElementById('fallback');
+        if (root && fallback && root.children.length === 0) {
+          fallback.style.display = 'none';
+          observer.disconnect();
         }
-      }, 10000);
+      });
+      observer.observe(document.getElementById('root'), { childList: true });
     </script>
   </body>
 </html>
-
