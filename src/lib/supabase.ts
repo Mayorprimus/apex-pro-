@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://smnvuvyybhliwrtgqdgx.supabase.co'
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zLwut2WidNYySQW-c4Tfww_q73NnEWx'
+// Hardcoded Legacy keys (works without Vercel env vars)
+const supabaseUrl = 'https://smnvuvyybhliwrtgqdgx.supabase.co'
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwMTEyMTgsImV4cCI6MjEwNzU4NzIxOH0.9A8EcBUROlejldEEHyEvTWKvTF6dxdPntYYDni7eoBA'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
