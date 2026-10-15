@@ -9,6 +9,7 @@ export default function AuthPage({ onLogin }: { onLogin: (data: { name?: string,
   const [loading, setLoading] = useState(false);
   const [showBonusPopup, setShowBonusPopup] = useState(false);
   const [tempUserData, setTempUserData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -19,6 +20,7 @@ export default function AuthPage({ onLogin }: { onLogin: (data: { name?: string,
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
     try {
@@ -35,7 +37,7 @@ export default function AuthPage({ onLogin }: { onLogin: (data: { name?: string,
     } catch (err: any) {
         console.error('[Auth Error]', err);
         const msg = err?.message || err?.toString() || "Security protocol failure";
-        alert(msg);
+        setError(msg);
     } finally {
         setLoading(false);
     }
@@ -49,7 +51,7 @@ export default function AuthPage({ onLogin }: { onLogin: (data: { name?: string,
         setShowBonusPopup(false);
         onLogin({ name: tempUserData.name, email: tempUserData.email, isRegistration: true, bonusClaimed: true, user: updatedUser });
     } catch (err: any) {
-        alert("Bonus extraction failed: " + err.message);
+        setError("Bonus extraction failed: " + err.message);
     } finally {
         setLoading(false);
     }
@@ -98,6 +100,11 @@ export default function AuthPage({ onLogin }: { onLogin: (data: { name?: string,
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] font-medium animate-in slide-in-from-top-2 duration-300">
+                {error}
+              </div>
+            )}
             {!isLogin && (
               <>
                 <div className="space-y-2">
