@@ -1,38 +1,62 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
-import bcrypt from 'bcryptjs';
 
-// Hardcoded Legacy keys (works without Vercel env vars)
-const supabaseUrl = 'https://smnvuvyybhliwrtgqdgx.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAxMTIxOCwiZXhwIjoyMTA3NTg3MjE4fQ.uycLaxtbgvhX5LBiz94C7kDjrRPAJSH-sYXvUdDYu5E';
+// Lazy-initialized Supabase client (avoids module-level crashes in serverless)
+let _supabaseAdmin: ReturnType<typeof import('@supabase/supabase-js').createClient> | null = null;
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { autoRefreshToken: false, persistSession: false }
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseUrl = 'https://smnvuvyybhliwrtgqdgx.supabase.co';
+    const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAxMTIxOCwiZXhwIjoyMTA3NTg3MjE4fQ.uycLaxtbgvhX5LBiz94C7kDjrRPAJSH-sYXvUdDYu5E';
+    _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+  }
+  return _supabaseAdmin;
+}
+
+let _bcrypt: typeof import('bcryptjs') | null = null;
+function getBcrypt() {
+  if (!_bcrypt) {
+    _bcrypt = require('bcryptjs');
+  }
+  return _bcrypt;
+}
+
+export const supabaseAdmin = new Proxy({} as any, {
+  get(_, prop) {
+    const client = getSupabaseAdmin();
+    return (client as any)[prop];
+  }
 });
 
 export async function getUserFromSession(sessionId: string) {
   if (!sessionId) return null;
-  const { data: session } = await supabaseAdmin.from('sessions').select('user_id, expires_at').eq('id', sessionId).single();
+  const client = getSupabaseAdmin();
+  const { data: session } = await client.from('sessions').select('user_id, expires_at').eq('id', sessionId).single();
   if (!session || new Date(session.expires_at) < new Date()) {
-    if (session) await supabaseAdmin.from('sessions').delete().eq('id', sessionId);
+    if (session) await client.from('sessions').delete().eq('id', sessionId);
     return null;
   }
-  const { data: user } = await supabaseAdmin.from('users').select('*').eq('id', session.user_id).single();
+  const { data: user } = await client.from('users').select('*').eq('id', session.user_id).single();
   return user;
 }
 
 export async function createSession(userId: string): Promise<string> {
+  const client = getSupabaseAdmin();
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  await supabaseAdmin.from('sessions').insert({ id: sessionId, user_id: userId, expires_at: expiresAt.toISOString() });
+  await client.from('sessions').insert({ id: sessionId, user_id: userId, expires_at: expiresAt.toISOString() });
   return sessionId;
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const bcrypt = getBcrypt();
   try { return await bcrypt.compare(password, hash); } catch { return password === hash; }
 }
 
 export async function hashPassword(password: string): Promise<string> {
+  const bcrypt = getBcrypt();
   return await bcrypt.hash(password, 10);
 }
 
@@ -50,7 +74,6 @@ export async function adminMiddleware(req: VercelRequest, res: VercelResponse) {
   return user;
 }
 
-// Returns true if this was an OPTIONS preflight (response already sent).
 export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
