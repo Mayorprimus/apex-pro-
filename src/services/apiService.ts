@@ -48,7 +48,7 @@ class ApiService {
   // Auth
   static async register(name: string, email: string, password: string, phone?: string, country?: string) {
     console.log('[API] Registering:', { name, email, phone, country })
-    const res = await fetch(`${API_BASE}/auth/register`, {
+    const res = await fetch(`${API_BASE}/auth?action=register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, password, phone, country }),
@@ -59,7 +59,7 @@ class ApiService {
 
   static async login(email: string, password: string) {
     console.log('[API] Logging in:', { email })
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await fetch(`${API_BASE}/auth?action=login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -85,7 +85,7 @@ class ApiService {
   }
 
   static async updatePaymentSettings(settings: any) {
-    const res = await fetch(`${API_BASE}/admin/update-payment-settings`, {
+    const res = await fetch(`${API_BASE}/admin?action=update-payment-settings`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify(settings),
@@ -95,12 +95,12 @@ class ApiService {
 
   // User
   static async getMe() {
-    const res = await fetch(`${API_BASE}/user/me`, { headers: this.headers })
+    const res = await fetch(`${API_BASE}/user?action=me`, { headers: this.headers })
     return this.handleResponse(res)
   }
 
   static async claimBonus() {
-    const res = await fetch(`${API_BASE}/user/claim-bonus`, {
+    const res = await fetch(`${API_BASE}/user?action=claim-bonus`, {
       method: "POST",
       headers: this.headers
     })
@@ -108,7 +108,7 @@ class ApiService {
   }
 
   static async updateProfile(data: { name?: string; phone?: string; country?: string }) {
-    const res = await fetch(`${API_BASE}/user/update-profile`, {
+    const res = await fetch(`${API_BASE}/user?action=update-profile`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify(data),
@@ -118,7 +118,7 @@ class ApiService {
 
   // Trades
   static async placeTrade(assetId: string, type: 'BUY' | 'SELL', lot: number) {
-    const res = await fetch(`${API_BASE}/trades/place?asset=${assetId}`, {
+    const res = await fetch(`${API_BASE}/trades?action=place&asset=${assetId}`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ type, lot }),
@@ -128,12 +128,12 @@ class ApiService {
 
   // Admin
   static async getAdminUsers() {
-    const res = await fetch(`${API_BASE}/admin/users`, { headers: this.headers })
+    const res = await fetch(`${API_BASE}/admin?action=users`, { headers: this.headers })
     return this.handleResponse(res)
   }
 
   static async adjustBalance(userId: string, amount: number) {
-    const res = await fetch(`${API_BASE}/admin/adjust-balance`, {
+    const res = await fetch(`${API_BASE}/admin?action=adjust-balance`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ userId, amount }),
@@ -142,7 +142,7 @@ class ApiService {
   }
 
   static async setTrend(assetId: string, trend: string, trendRate?: number) {
-    const res = await fetch(`${API_BASE}/admin/set-trend`, {
+    const res = await fetch(`${API_BASE}/admin?action=set-trend`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ assetId, trend, trendRate }),
@@ -151,7 +151,7 @@ class ApiService {
   }
 
   static async updateUserStatus(userId: string, status: string, verified?: boolean) {
-    const res = await fetch(`${API_BASE}/admin/update-user-status`, {
+    const res = await fetch(`${API_BASE}/admin?action=update-user-status`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ userId, status, verified }),
