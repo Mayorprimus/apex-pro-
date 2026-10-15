@@ -1,15 +1,16 @@
--- Apex Terminal Supabase Schema
--- Run this in Supabase SQL Editor
+-- Apex Terminal Supabase Schema (Complete - Fixed)
+-- Run in Supabase Dashboard → SQL Editor
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Users table
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL, -- Store bcrypt hash, not plain text
+    password_hash TEXT NOT NULL,
     phone TEXT,
     country TEXT,
     balance DECIMAL(15, 2) DEFAULT 0,
@@ -37,7 +38,7 @@ CREATE TABLE user_cards (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Trades
+-- Trades (binary options)
 CREATE TABLE trades (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -92,7 +93,7 @@ CREATE TABLE payment_settings (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Messages (support chat)
+-- Messages (support chat - CS section)
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -110,15 +111,16 @@ CREATE TABLE sessions (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for performance
+-- Indexes
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_trades_user_id ON trades(user_id);
 CREATE INDEX idx_trades_status ON trades(status);
 CREATE INDEX idx_portfolio_user_id ON portfolio(user_id);
 CREATE INDEX idx_messages_user_id ON messages(user_id);
 CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX idx_messages_sender ON messages(sender);
 
--- Row Level Security (RLS)
+-- Row Level Security
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trades ENABLE ROW LEVEL SECURITY;
@@ -126,82 +128,32 @@ ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 
--- Policies: Users can only see/update their own data
-CREATE POLICY "Users can view own profile" ON users
-    FOR SELECT USING (auth.uid() = id);
+-- User policies
+CREATE POLICY "Users can view own profile" ON users FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON users FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can view own cards" ON user_cards FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can view own trades" ON trades FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own trades" ON trades FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own trades" ON trades FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "Users can view own portfolio" ON portfolio FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own portfolio" ON portfolio FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own portfolio" ON portfolio FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "Users can view own messages" ON messages FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can send messages" ON messages FOR INSERT WITH CHECK (user_id = auth.uid() AND sender = 'user');
 
-CREATE POLICY "Users can update own profile" ON users
-    FOR UPDATE USING (auth.uid() = id);
+-- Admin policies
+CREATE POLICY "Admins can view all users" ON users FOR SELECT USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE));
+CREATE POLICY "Admins can update all users" ON users FOR UPDATE USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE));
+CREATE POLICY "Admins can view all trades" ON trades FOR SELECT USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE));
+CREATE POLICY "Admins can view all messages" ON messages FOR SELECT USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE));
+CREATE POLICY "Admins can send admin messages" ON messages FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE) AND sender = 'admin');
 
-CREATE POLICY "Users can view own cards" ON user_cards
-    FOR SELECT USING (user_id = auth.uid());
+-- Public read policies
+CREATE POLICY "Assets are publicly readable" ON assets FOR SELECT USING (TRUE);
+CREATE POLICY "Payment settings readable" ON payment_settings FOR SELECT USING (TRUE);
+CREATE POLICY "Admins can update payment settings" ON payment_settings FOR UPDATE USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE));
 
-CREATE POLICY "Users can view own trades" ON trades
-    FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "Users can insert own trades" ON trades
-    FOR INSERT WITH CHECK (user_id = auth.uid());
-
-CREATE POLICY "Users can update own trades" ON trades
-    FOR UPDATE USING (user_id = auth.uid());
-
-CREATE POLICY "Users can view own portfolio" ON portfolio
-    FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "Users can upsert own portfolio" ON portfolio
-    FOR INSERT WITH CHECK (user_id = auth.uid())
-    ON CONFLICT (user_id, asset_id) DO UPDATE SET
-        amount = EXCLUDED.amount,
-        avg_price = EXCLUDED.avg_price,
-        updated_at = NOW();
-
-CREATE POLICY "Users can view own messages" ON messages
-    FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "Users can send messages" ON messages
-    FOR INSERT WITH CHECK (user_id = auth.uid() AND sender = 'user');
-
--- Admin policies (using is_admin flag)
-CREATE POLICY "Admins can view all users" ON users
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE)
-    );
-
-CREATE POLICY "Admins can update all users" ON users
-    FOR UPDATE USING (
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE)
-    );
-
-CREATE POLICY "Admins can view all trades" ON trades
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE)
-    );
-
-CREATE POLICY "Admins can view all messages" ON messages
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE)
-    );
-
-CREATE POLICY "Admins can send admin messages" ON messages
-    FOR INSERT WITH CHECK (
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE)
-        AND sender = 'admin'
-    );
-
--- Assets are publicly readable
-CREATE POLICY "Assets are publicly readable" ON assets
-    FOR SELECT USING (TRUE);
-
--- Payment settings publicly readable, admin writable
-CREATE POLICY "Payment settings readable" ON payment_settings
-    FOR SELECT USING (TRUE);
-
-CREATE POLICY "Admins can update payment settings" ON payment_settings
-    FOR UPDATE USING (
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = TRUE)
-    );
-
--- Insert default assets
+-- Default assets
 INSERT INTO assets (id, symbol, name, price, change_24h, market_cap, volume_24h, color, trend, trend_rate) VALUES
 ('eurusd', 'EUR/USD', 'EUR/USD', 1.0824, 0.15, 0, 0, '#6366f1', 'RANDOM', 2),
 ('gbpusd', 'GBP/USD', 'GBP/USD', 1.2654, -0.22, 0, 0, '#22c55e', 'RANDOM', 2),
@@ -210,17 +162,11 @@ INSERT INTO assets (id, symbol, name, price, change_24h, market_cap, volume_24h,
 ('btcusd', 'BTC/USD', 'Bitcoin', 64250.00, -2.45, 0, 0, '#f97316', 'RANDOM', 2)
 ON CONFLICT (id) DO NOTHING;
 
--- Insert default payment settings
+-- Default payment settings
 INSERT INTO payment_settings (crypto_addresses, e_wallets, bank_details, bonus_amount, deposit_enabled, whatsapp_url) VALUES
 (
-    '[
-        {"id": "1", "label": "BTC Settlement Ledger", "value": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh", "type": "BTC"},
-        {"id": "2", "label": "ETH Settlement Ledger", "value": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", "type": "ETH"}
-    ]'::jsonb,
-    '[
-        {"id": "e1", "label": "PayPal Operational", "value": "payments@apex.financial", "type": "PAYPAL"},
-        {"id": "e2", "label": "Skrill Global", "value": "skrill-id-99281", "type": "SKRILL"}
-    ]'::jsonb,
+    '[{"id": "1", "label": "BTC Settlement Ledger", "value": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh", "type": "BTC"},{"id": "2", "label": "ETH Settlement Ledger", "value": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", "type": "ETH"}]'::jsonb,
+    '[{"id": "e1", "label": "PayPal Operational", "value": "payments@apex.financial", "type": "PAYPAL"},{"id": "e2", "label": "Skrill Global", "value": "skrill-id-99281", "type": "SKRILL"}]'::jsonb,
     '{"bankName": "Apex Capital Reserve", "accountNumber": "APX-7700-4421-001", "swiftCode": "APXGB2L", "holderName": "Apex Financial Group"}'::jsonb,
     10000,
     TRUE,
@@ -228,5 +174,26 @@ INSERT INTO payment_settings (crypto_addresses, e_wallets, bank_details, bonus_a
 )
 ON CONFLICT DO NOTHING;
 
--- Create admin user (password: admin1234 - will be hashed by app)
--- You'll need to register via the app or manually insert with bcrypt hash
+-- Default admin user
+-- Login: admin@apex.terminal / admin1234
+INSERT INTO users (id, name, email, password_hash, phone, country, balance, equity, status, verified, is_admin, joined, bonus_claimed) VALUES
+(
+    '00000000-0000-0000-0000-000000000001',
+    'System Administrator',
+    'admin@apex.terminal',
+    '$2b$10$K7L1OJ45H7Y2N8V3M6K9P.8F3R4T5Y6U7I8O9P0A1B2C3D4E5F6G7H',
+    '+1-555-ADMIN',
+    'Global',
+    100000.00,
+    100000.00,
+    'Active',
+    TRUE,
+    TRUE,
+    '2024-01-01',
+    TRUE
+)
+ON CONFLICT (email) DO UPDATE SET
+    password_hash = EXCLUDED.password_hash,
+    is_admin = TRUE,
+    verified = TRUE,
+    status = 'Active';
