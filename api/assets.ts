@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { supabaseAdmin } from '../_lib/supabase.js'
+import { supabaseAdmin } from '../_lib/supabase'
 
 // In-memory asset simulation (same as original server)
 const simulateAssetUpdates = (assets: any[]) => {

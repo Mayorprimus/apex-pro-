@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { supabaseAdmin, getUserFromSession } from '../../_lib/supabase.js'
+import { supabaseAdmin, getUserFromSession } from '../_lib/supabase'
 
 // Middleware to verify session
 export async function authMiddleware(req: VercelRequest, res: VercelResponse) {
