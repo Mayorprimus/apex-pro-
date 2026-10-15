@@ -8,38 +8,44 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Apex Terminal" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icon.png" />
+    <!-- No manifest, no service worker -->
     <script>
-      // Service Worker disabled
       console.log('Apex Terminal loading...');
       if ('caches' in window) {
         caches.keys().then(names => names.forEach(name => caches.delete(name)));
       }
+      // Prevent any accidental reload
+      window.addEventListener('beforeunload', (e) => {
+        if (!window.__apex_manual_reload) {
+          console.warn('Blocking unexpected unload');
+          e.preventDefault();
+        }
+      });
     </script>
   </head>
   <body>
     <div id="root">
-      <!-- Static fallback - no auto-hide, no refresh -->
       <div id="fallback" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#020203;color:#fff;font-family:system-ui;padding:20px;text-align:center;">
         <div>
           <div style="font-size:3rem;margin-bottom:1rem;">⚡</div>
           <h1 style="font-size:1.5rem;margin-bottom:0.5rem;">Apex Terminal</h1>
           <p style="color:#888;font-size:0.9rem;">Loading financial terminal...</p>
           <p style="color:#666;font-size:0.75rem;margin-top:1rem;">
-            <a href="#" onclick="location.reload()" style="color:#6366f1;">Refresh if stuck</a>
+            <button onclick="window.__apex_manual_reload=true;location.reload()" style="background:#6366f1;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:0.85rem;">Refresh if stuck</button>
           </p>
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- Cache-busting query param -->
+    <script type="module" src="/src/main.tsx?v=20241015"></script>
     <script>
       console.log('Apex Terminal loading...');
       if ('caches' in window) {
         caches.keys().then(names => names.forEach(name => caches.delete(name)));
       }
-      // NO auto-hide, NO auto-refresh, NO observers
-      // React will replace #root content when it mounts
+      // Mark manual reloads
+      window.__apex_manual_reload = false;
+      document.querySelector('button')?.addEventListener('click', () => { window.__apex_manual_reload = true; });
     </script>
   </body>
 </html>
