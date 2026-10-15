@@ -100,6 +100,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // ===== PUBLIC ROUTES =====
 
+    // GET /api/health - Simple health check
+    if (path === '/health' && req.method === 'GET') {
+      return res.json({ ok: true, timestamp: new Date().toISOString(), supabase: supabaseUrl })
+    }
+
     // GET /api/assets
     if (path === '/assets' && req.method === 'GET') {
       const { data: assets, error } = await supabaseAdmin!.from('assets').select('*').order('symbol')
