@@ -128,8 +128,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cleanEmail = email?.toLowerCase().trim()
       if (!name || !cleanEmail || !password) return res.status(400).json({ error: 'Missing required fields' })
       try {
+        // Test Supabase connection first
+        const { data: testConn, error: connError } = await supabaseAdmin!.from('users').select('id').limit(1)
+        if (connError) throw new Error(`Supabase connection failed: ${connError.message}`)
+        
         const { data: existingUser } = await supabaseAdmin!.from('users').select('id').eq('email', cleanEmail).single()
         if (existingUser) return res.status(400).json({ error: 'This Terminal ID is already commissioned.' })
+        
         const passwordHash = await hashPassword(password)
         const { data: user, error } = await supabaseAdmin!.from('users').insert({
           name, email: cleanEmail, password_hash: passwordHash,
@@ -138,13 +143,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           status: 'Active', verified: true, is_admin: false,
           joined: new Date().toISOString().split('T')[0], bonus_claimed: false, avatar: null
         }).select().single()
-        if (error) { console.error('[REGISTER DB ERROR]', error); throw error }
+        if (error) { 
+          console.error('[REGISTER DB ERROR]', error)
+          throw new Error(`Database error: ${error.message} (code: ${error.code})`)
+        }
         const sessionId = await createSession(user.id)
         const { password_hash, ...safeUser } = user
         return res.json({ user: safeUser, sessionId })
       } catch (err: any) {
         console.error('[REGISTER ERROR]', err)
-        return res.status(500).json({ error: err?.message || 'Registration failed' })
+        return res.status(500).json({ error: err?.message || 'Registration failed', details: err?.toString() })
       }
     }
 
@@ -154,16 +162,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cleanEmail = email?.toLowerCase().trim()
       if (!cleanEmail || !password) return res.status(400).json({ error: 'Email and password required' })
       try {
+        const { data: testConn, error: connError } = await supabaseAdmin!.from('users').select('id').limit(1)
+        if (connError) throw new Error(`Supabase connection failed: ${connError.message}`)
+        
         const { data: user, error } = await supabaseAdmin!.from('users').select('*').eq('email', cleanEmail).single()
         if (error || !user) return res.status(401).json({ error: 'Invalid credentials' })
+        
         const valid = await verifyPassword(password, user.password_hash)
         if (!valid) return res.status(401).json({ error: 'Invalid credentials' })
+        
         const sessionId = await createSession(user.id)
         const { password_hash, ...safeUser } = user
         return res.json({ user: safeUser, sessionId })
       } catch (err: any) {
         console.error('[LOGIN ERROR]', err)
-        return res.status(500).json({ error: err?.message || 'Login failed' })
+        return res.status(500).json({ error: err?.message || 'Login failed', details: err?.toString() })
       }
     }
 
