@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin, authMiddleware, adminMiddleware, applyCors } from '../_lib/shared';
+import { createSupabaseAdmin, authMiddleware, adminMiddleware, applyCors } from '../_lib/shared';
 
 // GET  /api/admin?action=users
 // POST /api/admin?action=adjust-balance | set-trend | update-payment-settings | update-user-status
@@ -14,7 +14,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (action === 'users' && req.method === 'GET') {
-      const { data: users, error } = await supabaseAdmin.from('users')
+      const client = createSupabaseAdmin();
+      const { data: users, error } = await client.from('users')
         .select('id, name, email, balance, status, verified, is_admin, joined, created_at')
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -25,11 +26,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { userId, amount } = req.body;
       if (!userId || typeof amount !== 'number') return res.status(400).json({ error: 'Missing userId or amount' });
 
-      const { data: targetUser, error: fetchError } = await supabaseAdmin.from('users').select('balance').eq('id', userId).single();
+      const client = createSupabaseAdmin();
+      const { data: targetUser, error: fetchError } = await client.from('users').select('balance').eq('id', userId).single();
       if (fetchError || !targetUser) return res.status(404).json({ error: 'User not found' });
 
       const newBalance = Math.max(0, (targetUser.balance || 0) + amount);
-      const { data: updated, error } = await supabaseAdmin.from('users')
+      const { data: updated, error } = await client.from('users')
         .update({ balance: newBalance }).eq('id', userId).select().single();
       if (error) throw error;
 
@@ -43,10 +45,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const validTrends = ['RANDOM', 'PUMP', 'DUMP', 'STABLE'];
       if (!validTrends.includes(trend)) return res.status(400).json({ error: 'Invalid trend' });
 
+      const client = createSupabaseAdmin();
       const updateData: any = { trend };
       if (typeof trendRate === 'number') updateData.trend_rate = trendRate;
 
-      const { data: asset, error } = await supabaseAdmin.from('assets')
+      const { data: asset, error } = await client.from('assets')
         .update(updateData).eq('id', assetId).select().single();
       if (error) throw error;
       if (!asset) return res.status(404).json({ error: 'Asset not found' });
@@ -55,16 +58,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (action === 'update-payment-settings' && req.method === 'POST') {
       const settings = req.body;
-      const { data: existing } = await supabaseAdmin.from('payment_settings').select('id').limit(1).single();
+      const client = createSupabaseAdmin();
+      const { data: existing } = await client.from('payment_settings').select('id').limit(1).single();
 
       let result;
       if (existing) {
-        const { data, error } = await supabaseAdmin.from('payment_settings')
+        const { data, error } = await client.from('payment_settings')
           .update({ ...settings, updated_at: new Date().toISOString() }).eq('id', existing.id).select().single();
         if (error) throw error;
         result = data;
       } else {
-        const { data, error } = await supabaseAdmin.from('payment_settings')
+        const { data, error } = await client.from('payment_settings')
           .insert({ ...settings, updated_at: new Date().toISOString() }).select().single();
         if (error) throw error;
         result = data;
@@ -76,11 +80,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { userId, status, verified } = req.body;
       if (!userId) return res.status(400).json({ error: 'Missing userId' });
 
+      const client = createSupabaseAdmin();
       const updateData: any = {};
       if (status) updateData.status = status;
       if (typeof verified === 'boolean') updateData.verified = verified;
 
-      const { data: updated, error } = await supabaseAdmin.from('users')
+      const { data: updated, error } = await client.from('users')
         .update(updateData).eq('id', userId).select().single();
       if (error) throw error;
       if (!updated) return res.status(404).json({ error: 'User not found' });

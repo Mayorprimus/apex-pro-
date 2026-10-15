@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
+import { createSupabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
 
 // GET  /api/messages
 // POST /api/messages
@@ -12,9 +12,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === 'GET') {
-      const { data: messages, error } = isAdmin
-        ? await supabaseAdmin.from('messages').select('*').order('created_at', { ascending: true })
-        : await supabaseAdmin.from('messages').select('*').eq('user_id', user.id).order('created_at', { ascending: true });
+      const client = createSupabaseAdmin();
+      let query = client.from('messages').select('*').order('created_at', { ascending: true });
+      if (!isAdmin) query = query.eq('user_id', user.id);
+      const { data: messages, error } = await query;
       if (error) throw error;
       return res.json(messages || []);
     }
@@ -24,7 +25,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!text) return res.status(400).json({ error: 'Message text required' });
       const messageSender = isAdmin && sender === 'admin' ? 'admin' : 'user';
 
-      const { data: message, error } = await supabaseAdmin.from('messages').insert({
+      const client = createSupabaseAdmin();
+      const { data: message, error } = await client.from('messages').insert({
         user_id: user.id, user_name: user.name, sender: messageSender, text
       }).select().single();
       if (error) throw error;

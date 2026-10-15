@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
+import { createSupabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
 
 // GET  /api/user?action=me
 // POST /api/user?action=claim-bonus | ?action=update-profile
@@ -12,9 +12,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (action === 'me' && req.method === 'GET') {
-      const { data: trades } = await supabaseAdmin.from('trades').select('*').eq('user_id', user.id).order('opened_at', { ascending: false });
-      const { data: cards } = await supabaseAdmin.from('user_cards').select('*').eq('user_id', user.id);
-      const { data: portfolio } = await supabaseAdmin.from('portfolio').select('*').eq('user_id', user.id);
+      const client = createSupabaseAdmin();
+      const { data: trades } = await client.from('trades').select('*').eq('user_id', user.id).order('opened_at', { ascending: false });
+      const { data: cards } = await client.from('user_cards').select('*').eq('user_id', user.id);
+      const { data: portfolio } = await client.from('portfolio').select('*').eq('user_id', user.id);
 
       const openTrades = trades?.filter(t => t.status === 'OPEN') || [];
       const openProfit = openTrades.reduce((sum, t) => sum + (t.profit || 0), 0);
@@ -32,11 +33,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'claim-bonus' && req.method === 'POST') {
       if (user.bonus_claimed) return res.status(400).json({ error: 'Bonus already claimed' });
 
-      const { data: settings } = await supabaseAdmin.from('payment_settings').select('bonus_amount').limit(1).single();
+      const client = createSupabaseAdmin();
+      const { data: settings } = await client.from('payment_settings').select('bonus_amount').limit(1).single();
       const bonusAmount = settings?.bonus_amount || 10000;
       const newBalance = (user.balance || 0) + bonusAmount;
 
-      const { data: updated, error } = await supabaseAdmin.from('users')
+      const { data: updated, error } = await client.from('users')
         .update({ balance: newBalance, bonus_claimed: true }).eq('id', user.id).select().single();
       if (error) throw error;
 
@@ -51,7 +53,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (phone !== undefined) updateData.phone = phone;
       if (country !== undefined) updateData.country = country;
 
-      const { data: updated, error } = await supabaseAdmin.from('users')
+      const client = createSupabaseAdmin();
+      const { data: updated, error } = await client.from('users')
         .update(updateData).eq('id', user.id).select().single();
       if (error) throw error;
 

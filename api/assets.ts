@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin, simulateAssetUpdates, applyCors } from '../_lib/shared';
+import { createSupabaseAdmin, simulateAssetUpdates, applyCors } from '../_lib/shared';
 
 let cachedAssets: any[] | null = null;
 let lastUpdate = 0;
@@ -10,7 +10,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { data: assets, error } = await supabaseAdmin.from('assets').select('*').order('symbol');
+    const client = createSupabaseAdmin();
+    const { data: assets, error } = await client.from('assets').select('*').order('symbol');
     if (error) throw error;
 
     const now = Date.now();
@@ -18,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cachedAssets = simulateAssetUpdates(assets || []);
       lastUpdate = now;
       for (const asset of cachedAssets) {
-        supabaseAdmin.from('assets').update({
+        client.from('assets').update({
           price: asset.price, change_24h: asset.change_24h,
           sparkline: asset.sparkline, updated_at: new Date().toISOString()
         }).eq('id', asset.id);

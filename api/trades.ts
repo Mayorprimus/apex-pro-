@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
+import { createSupabaseAdmin, authMiddleware, applyCors } from '../_lib/shared';
 
 // POST /api/trades?action=place&asset={assetId}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -16,7 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!assetId || !type || !lot) return res.status(400).json({ error: 'Missing required fields' });
       if (lot <= 0 || lot > user.balance) return res.status(400).json({ error: 'Invalid position size' });
 
-      const { data: asset } = await supabaseAdmin.from('assets').select('*').eq('id', assetId).single();
+      const client = createSupabaseAdmin();
+      const { data: asset } = await client.from('assets').select('*').eq('id', assetId).single();
       if (!asset) return res.status(404).json({ error: 'Asset not found' });
 
       const payoutRate = 0.88;
@@ -24,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const isWin = Math.random() > 0.48;
       const finalProfit = isWin ? profit : -lot;
 
-      const { data: trade, error } = await supabaseAdmin.from('trades').insert({
+      const { data: trade, error } = await client.from('trades').insert({
         user_id: user.id, symbol: asset.symbol, type, lot,
         open_price: asset.price, close_price: asset.price * (isWin ? 1.0001 : 0.9999),
         profit: finalProfit, status: 'CLOSED',
@@ -33,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (error) throw error;
 
       const newBalance = Math.max(0, (user.balance || 0) + finalProfit);
-      await supabaseAdmin.from('users').update({ balance: newBalance }).eq('id', user.id);
+      await client.from('users').update({ balance: newBalance }).eq('id', user.id);
 
       return res.json({ trade, newBalance, isWin, profit: finalProfit });
     }
