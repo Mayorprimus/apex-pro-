@@ -47,20 +47,24 @@ class ApiService {
 
   // Auth
   static async register(name: string, email: string, password: string, phone?: string, country?: string) {
+    console.log('[API] Registering:', { name, email, phone, country })
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, password, phone, country }),
     })
+    console.log('[API] Register response:', res.status, res.statusText)
     return this.handleResponse(res)
   }
 
   static async login(email: string, password: string) {
+    console.log('[API] Logging in:', { email })
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     })
+    console.log('[API] Login response:', res.status, res.statusText)
     return this.handleResponse(res)
   }
 
