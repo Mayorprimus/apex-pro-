@@ -11,18 +11,44 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('Service Worker registered', reg))
-            .catch(err => console.log('Service Worker registration failed', err));
-        });
+      // Service Worker disabled for debugging - enable after stable
+      // if ('serviceWorker' in navigator) {
+      //   window.addEventListener('load', () => {
+      //     navigator.serviceWorker.register('/sw.js')
+      //       .then(reg => console.log('Service Worker registered', reg))
+      //       .catch(err => console.log('Service Worker registration failed', err));
+      //   });
+      // }
+      console.log('Apex Terminal loading...');
+      // Clear any stale caches
+      if ('caches' in window) {
+        caches.keys().then(names => names.forEach(name => caches.delete(name)));
       }
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Fallback if React fails to mount -->
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#020203;color:#fff;font-family:system-ui;padding:20px;text-align:center;">
+        <div>
+          <div style="font-size:3rem;margin-bottom:1rem;">⚡</div>
+          <h1 style="font-size:1.5rem;margin-bottom:0.5rem;">Apex Terminal</h1>
+          <p style="color:#888;font-size:0.9rem;">Loading financial terminal...</p>
+          <p style="color:#666;font-size:0.75rem;margin-top:1rem;">If this persists, <a href="#" onclick="location.reload()" style="color:#6366f1;">refresh</a> or clear cache.</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Force refresh if stuck on fallback for >10s
+      setTimeout(() => {
+        const root = document.getElementById('root');
+        if (root && root.querySelector('h1')) {
+          console.log('React failed to mount, reloading...');
+          location.reload();
+        }
+      }, 10000);
+    </script>
   </body>
 </html>
 
