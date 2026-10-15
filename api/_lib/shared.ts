@@ -1,38 +1,34 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Lazy-initialized Supabase client (avoids module-level crashes in serverless)
-let _supabaseAdmin: ReturnType<typeof import('@supabase/supabase-js').createClient> | null = null;
-
-function getSupabaseAdmin() {
-  if (!_supabaseAdmin) {
-    const { createClient } = require('@supabase/supabase-js');
-    const supabaseUrl = 'https://smnvuvyybhliwrtgqdgx.supabase.co';
-    const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAxMTIxOCwiZXhwIjoyMTA3NTg3MjE4fQ.uycLaxtbgvhX5LBiz94C7kDjrRPAJSH-sYXvUdDYu5E';
-    _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-  }
-  return _supabaseAdmin;
+// ---------- CORS ----------
+export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-Session-ID');
+  if (req.method === 'OPTIONS') { res.status(200).end(); return true; }
+  return false;
 }
 
-let _bcrypt: typeof import('bcryptjs') | null = null;
+// ---------- Lazy Supabase (created per-request) ----------
+function createSupabaseAdmin() {
+  const { createClient } = require('@supabase/supabase-js');
+  return createClient(
+    'https://smnvuvyybhliwrtgqdgx.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbnZ1dnl5YmhsaXdydGdxZGd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAxMTIxOCwiZXhwIjoyMTA3NTg3MjE4fQ.uycLaxtbgvhX5LBiz94C7kDjrRPAJSH-sYXvUdDYu5E',
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
+
+// ---------- Lazy bcrypt ----------
 function getBcrypt() {
-  if (!_bcrypt) {
-    _bcrypt = require('bcryptjs');
-  }
-  return _bcrypt;
+  return require('bcryptjs');
 }
 
-export const supabaseAdmin = new Proxy({} as any, {
-  get(_, prop) {
-    const client = getSupabaseAdmin();
-    return (client as any)[prop];
-  }
-});
-
-export async function getUserFromSession(sessionId: string) {
+// ---------- Session helpers ----------
+async function getUserFromSession(sessionId: string) {
   if (!sessionId) return null;
-  const client = getSupabaseAdmin();
+  const client = createSupabaseAdmin();
   const { data: session } = await client.from('sessions').select('user_id, expires_at').eq('id', sessionId).single();
   if (!session || new Date(session.expires_at) < new Date()) {
     if (session) await client.from('sessions').delete().eq('id', sessionId);
@@ -42,24 +38,25 @@ export async function getUserFromSession(sessionId: string) {
   return user;
 }
 
-export async function createSession(userId: string): Promise<string> {
-  const client = getSupabaseAdmin();
+async function createSession(userId: string): Promise<string> {
+  const client = createSupabaseAdmin();
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await client.from('sessions').insert({ id: sessionId, user_id: userId, expires_at: expiresAt.toISOString() });
   return sessionId;
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
   const bcrypt = getBcrypt();
   try { return await bcrypt.compare(password, hash); } catch { return password === hash; }
 }
 
-export async function hashPassword(password: string): Promise<string> {
+async function hashPassword(password: string): Promise<string> {
   const bcrypt = getBcrypt();
   return await bcrypt.hash(password, 10);
 }
 
+// ---------- Middleware ----------
 export async function authMiddleware(req: VercelRequest, res: VercelResponse) {
   const sessionId = req.headers['x-session-id'] as string;
   const user = await getUserFromSession(sessionId);
@@ -74,15 +71,7 @@ export async function adminMiddleware(req: VercelRequest, res: VercelResponse) {
   return user;
 }
 
-export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-Session-ID');
-  if (req.method === 'OPTIONS') { res.status(200).end(); return true; }
-  return false;
-}
-
+// ---------- Asset simulation ----------
 export function simulateAssetUpdates(assets: any[]) {
   return assets.map(asset => {
     const isVolatile = asset.symbol.includes('GOLD') || asset.symbol.includes('BTC');
@@ -108,3 +97,6 @@ export function simulateAssetUpdates(assets: any[]) {
     return { ...asset, price: close, change_24h: (asset.change_24h || 0) + (changePercent * 100), sparkline: newSparkline };
   });
 }
+
+// Export the factory functions so handlers can use them
+export { createSupabaseAdmin, getBcrypt, hashPassword, verifyPassword, createSession, getUserFromSession };
