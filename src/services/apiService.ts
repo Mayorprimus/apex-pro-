@@ -30,6 +30,7 @@ class ApiService {
       let errorMessage = "Unknown error"
       try {
         const text = await res.text()
+        console.error('[API Error Response]', res.status, text)
         try {
           const data = JSON.parse(text)
           errorMessage = data.error || data.message || text

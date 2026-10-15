@@ -33,7 +33,9 @@ export default function AuthPage({ onLogin }: { onLogin: (data: { name?: string,
             onLogin({ email: data.user.email, isRegistration: false, user: data.user });
         }
     } catch (err: any) {
-        alert(err.message || "Security protocol failure");
+        console.error('[Auth Error]', err);
+        const msg = err?.message || err?.toString() || "Security protocol failure";
+        alert(msg);
     } finally {
         setLoading(false);
     }
