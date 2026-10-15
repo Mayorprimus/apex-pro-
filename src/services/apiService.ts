@@ -29,10 +29,15 @@ class ApiService {
     if (!res.ok) {
       let errorMessage = "Unknown error"
       try {
-        const data = await res.json()
-        errorMessage = data.error || data.message || JSON.stringify(data)
+        const text = await res.text()
+        try {
+          const data = JSON.parse(text)
+          errorMessage = data.error || data.message || text
+        } catch {
+          errorMessage = text
+        }
       } catch {
-        errorMessage = await res.text()
+        errorMessage = `HTTP ${res.status}: ${res.statusText}`
       }
       throw new Error(errorMessage)
     }
