@@ -92,10 +92,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         joined: new Date().toISOString().split('T')[0], bonus_claimed: false, avatar: null
       }) });
       if (!userArr?.[0]) throw new Error('Database error: user not returned');
-      const user = userArr[0];
+      const regUser = userArr[0];
 
-      const sessionId = await createSession(user.id);
-      const { password_hash, ...safeUser } = user;
+      const sessionId = await createSession(regUser.id);
+      const { password_hash, ...safeUser } = regUser;
       return res.json({ user: safeUser, sessionId });
     }
 
@@ -104,14 +104,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cleanEmail = email?.toLowerCase().trim();
       if (!cleanEmail || !password) return res.status(400).json({ error: 'Email and password required' });
 
-      const user = await sbSingle<any>(`users?select=*&email=eq.${cleanEmail}`);
-      if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+      const loginUser = await sbSingle<any>(`users?select=*&email=eq.${cleanEmail}`);
+      if (!loginUser) return res.status(401).json({ error: 'Invalid credentials' });
 
-      const valid = await verifyPassword(password, user.password_hash);
+      const valid = await verifyPassword(password, loginUser.password_hash);
       if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-      const sessionId = await createSession(user.id);
-      const { password_hash, ...safeUser } = user;
+      const sessionId = await createSession(loginUser.id);
+      const { password_hash, ...safeUser } = loginUser;
       return res.json({ user: safeUser, sessionId });
     }
 
