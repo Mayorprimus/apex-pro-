@@ -58,7 +58,7 @@ function verifyPassword(password: string, hash: string): boolean {
     const salt = Buffer.from(saltB64, 'base64');
     const expectedHash = Buffer.from(hashB64, 'base64');
 
-    const derived = crypto.pbkdf2Sync(password, Buffer.from(saltB64, 'base64'), 100000, 32, 'sha256');
+    const derived = crypto.pbkdf2Sync(password, salt, iterations, 32, 'sha256');
     
     // Constant-time comparison
     if (derived.length !== expectedHash.length) return false;

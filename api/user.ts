@@ -12,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (action === 'me' && req.method === 'GET') {
-      const [trades, cards, portfolio] = await Promise.all([
+      const [trades, userCards, userPortfolio] = await Promise.all([
         sb<any[]>(`trades?select=*&user_id=eq.${user.id}&order=opened_at.desc`),
         sb<any[]>(`user_cards?select=*&user_id=eq.${user.id}`),
         sb<any[]>(`portfolio?select=*&user_id=eq.${user.id}`)
@@ -27,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ...safeUser, equity, margin: user.margin || 0,
         free_margin: user.free_margin || equity,
         margin_level: equity > 0 ? (equity / (user.margin || 1)) * 100 : 0,
-        cards: cards || [], portfolio: portfolio || [], trades: trades || []
+        cards: userCards || [], portfolio: userPortfolio || [], trades: trades || []
       });
     }
 
